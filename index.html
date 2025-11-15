@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Сканер кодов маркировки</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 100%;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #333;
+        }
+        
+        #reader {
+            width: 100%;
+            height: 300px;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 5px;
+            background: #007bff;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        button:hover {
+            background: #0056b3;
+        }
+        
+        button.export {
+            background: #28a745;
+        }
+        
+        button.export:hover {
+            background: #1e7e34;
+        }
+        
+        button.clear {
+            background: #dc3545;
+        }
+        
+        button.clear:hover {
+            background: #c82333;
+        }
+        
+        .stats {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        #results {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            background: #fafafa;
+        }
+        
+        .code-item {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .code-item:last-child {
+            border-bottom: none;
+        }
+        
+        .timestamp {
+            color: #666;
+            font-size: 12px;
+        }
+        
+        .status {
+            text-align: center;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 Сканер кодов маркировки</h1>
+        
+        <div class="status" id="status"></div>
+        
+        <div id="reader"></div>
+        
+        <div class="controls">
+            <button id="startScanner">Запуск сканера</button>
+            <button id="stopScanner" style="display:none;">Остановить</button>
+        </div>
+        
+        <div class="stats">
+            <div>Отсканировано кодов: <strong id="count">0</strong></div>
+        </div>
+        
+        <div class="controls">
+            <button class="export" onclick="exportCSV()">📥 Экспорт в CSV</button>
+            <button class="clear" onclick="clearCodes()">🗑️ Очистить</button>
+        </div>
+        
+        <div id="results"></div>
+    </div>
+
+    <script>
+        let codes = [];
+        let html5QrcodeScanner = null;
+        let isScanning = false;
+
+        // Элементы интерфейса
+        const startBtn = document.getElementById('startScanner');
+        const stopBtn = document.getElementById('stopScanner');
+        const countEl = document.getElementById('count');
+        const resultsEl = document.getElementById('results');
+        const statusEl = document.getElementById('status');
+
+        // Запуск сканера
+        startBtn.addEventListener('click', startScanner);
+        stopBtn.addEventListener('click', stopScanner);
+
+        function showStatus(message, type = 'success') {
+            statusEl.textContent = message;
+            statusEl.className = `status ${type}`;
+            setTimeout(() => {
+                statusEl.textContent = '';
+                statusEl.className = 'status';
+            }, 3000);
+        }
+
+        function startScanner() {
+            if (isScanning) return;
+            
+            html5QrcodeScanner = new Html5QrcodeScanner(
+                "reader", 
+                { 
+                    fps: 10, 
+                    qrbox: { width: 250, height: 150 },
+                    supportedScanTypes: [
+                        Html5QrcodeScanType.SCAN_TYPE_QR_CODE,
+                        Html5QrcodeScanType.SCAN_TYPE_CODE_128,
+                        Html5QrcodeScanType.SCAN_TYPE_CODE_39,
+                        Html5QrcodeScanType.SCAN_TYPE_EAN_13,
+                        Html5QrcodeScanType.SCAN_TYPE_EAN_8,
+                        Html5QrcodeScanType.SCAN_TYPE_UPC_A,
+                        Html5QrcodeScanType.SCAN_TYPE_UPC_E
+                    ]
+                },
+                false
+            );
+
+            html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+            isScanning = true;
+            startBtn.style.display = 'none';
+            stopBtn.style.display = 'block';
+            showStatus('Сканер запущен. Наведите камеру на код');
+        }
+
+        function stopScanner() {
+            if (html5QrcodeScanner) {
+                html5QrcodeScanner.clear().then(() => {
+                    html5QrcodeScanner = null;
+                    isScanning = false;
+                    startBtn.style.display = 'block';
+                    stopBtn.style.display = 'none';
+                    showStatus('Сканер остановлен');
+                }).catch(err => {
+                    console.error("Ошибка при остановке сканера:", err);
+                });
+            }
+        }
+
+        function onScanSuccess(decodedText, decodedResult) {
+            // Проверяем, нет ли уже такого кода
+            if (!codes.some(item => item.code === decodedText)) {
+                const newCode = {
+                    code: decodedText,
+                    timestamp: new Date().toLocaleString('ru-RU'),
+                    date: new Date().toISOString().split('T')[0],
+                    time: new Date().toLocaleTimeString('ru-RU')
+                };
+                
+                codes.push(newCode);
+                updateUI();
+                showStatus(`Код отсканирован! Тип: ${decodedResult.result.format?.formatName || 'неизвестен'}`);
+                
+                // Небольшая пауза перед следующим сканированием
+                setTimeout(() => {
+                    if (isScanning) {
+                        // Можно добавить звуковой сигнал здесь
+                    }
+                }, 1000);
+            } else {
+                showStatus('Этот код уже был отсканирован', 'error');
+            }
+        }
+
+        function onScanFailure(error) {
+            // Ошибки сканирования игнорируем - это нормально
+        }
+
+        function updateUI() {
+            countEl.textContent = codes.length;
+            
+            if (codes.length === 0) {
+                resultsEl.innerHTML = '<div style="text-align: center; color: #666;">Нет отсканированных кодов</div>';
+                return;
+            }
+            
+            resultsEl.innerHTML = codes.map((item, index) => `
+                <div class="code-item">
+                    <div>
+                        <strong>${item.code}</strong>
+                        <div class="timestamp">${item.timestamp}</div>
+                    </div>
+                    <div>#${index + 1}</div>
+                </div>
+            `).join('');
+            
+            // Прокручиваем к последнему элементу
+            resultsEl.scrollTop = resultsEl.scrollHeight;
+        }
+
+        function exportCSV() {
+            if (codes.length === 0) {
+                showStatus('Нет данных для экспорта', 'error');
+                return;
+            }
+            
+            let csv = 'Код,Дата,Время,Полная дата\n';
+            codes.forEach(row => {
+                csv += `"${row.code}","${row.date}","${row.time}","${row.timestamp}"\n`;
+            });
+            
+            const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv; charset=utf-8' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+            a.href = url;
+            a.download = `marking_codes_${timestamp}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            showStatus(`Экспортировано ${codes.length} кодов в CSV`);
+        }
+
+        function clearCodes() {
+            if (codes.length === 0) return;
+            
+            if (confirm(`Вы уверены, что хотите удалить все ${codes.length} кодов?`)) {
+                codes = [];
+                updateUI();
+                showStatus('Все коды удалены');
+            }
+        }
+
+        // Автозапуск сканера при загрузке страницы
+        window.addEventListener('load', function() {
+            setTimeout(startScanner, 500);
+        });
+
+        // Остановка сканера при закрытии страницы
+        window.addEventListener('beforeunload', stopScanner);
+    </script>
+</body>
+</html>
